@@ -1,0 +1,216 @@
+\documentclass[letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+
+\title{A gentle start to using the PrixFixe R/Bioconductor package}
+\author{Murat Ta\c{s}an  - updated by Adrian Pasculescu}
+\date{\today}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\maketitle
+
+
+\section{R/Bioconductor}
+
+This guide assumes the reader has some basic familiarity with using \textbf{R} and has installed the core \textbf{Bioconductor} packages.
+Information on installing both of these can be found on their respective websites:\\
+\begin{center}
+  \texttt{http://r-project.org}\\
+  \texttt{http://bioconductor.org}\\
+\end{center}
+
+Since this package is not yet hosted by CRAN or Bioconductor, its dependencies will also need to be installed prior to its own installation.
+These required packages are: \texttt{IRanges} (included by default as part of Bioconductor), \texttt{plyr}, \texttt{stringr}, \texttt{igraph}, \texttt{httr}, and \texttt{jsonlite}.
+Even if these packages are installed, it's worth upgrading them to the most recent versions in case any are outdated.
+Most R users will be familiar with installing/upgrading packages, but just in case, one way to install these packages from within R is to type:\\
+\texttt{> source("http://www.bioconductor.org/biocLite.R")}\\
+\texttt{> biocLite("IRanges")}\\
+\texttt{> install.packages(c("plyr", "stringr", "igraph", "httr", "jsonlite"))}\\
+Additional help on installing these packages can be found on the individual package pages hosted on CRAN or Bioconductor.
+
+\subsection{Internet access and remote data}
+
+This package installs the base software required to set up a ``prix fixe'' problem  (i.e. Selecting causal genes from genome-wide association studies via functionally coherent subnetworks). It then efficiently solves it using a genetic algorithm optimizer.
+To create a well-defined prix fixe instance, all that's needed is a set of gene sets (preferably disjoint), and a graph (a.k.a. "network") with edges connecting these genes.
+
+The accompanying prix fixe manuscript (see section [\ref{refs}] for references) uses data from (i) the International HapMap Project and (ii) published functional-association network papers to help (i) establish the gene sets and (ii) retrieve the network edges.
+These two data sources are quite large and would make this package swell to many GBs in size.
+So, two functions are provided in this package that access public web services querying pre-built databases.
+These two functions (\texttt{getLDRegionsFromSNPs.WS} and \texttt{getCandidateEdges.WS}) are described further below, but it is noted here that they both require the user to have a functioning internet connection (and the \texttt{.WS} suffix is used to remind the user of the web service dependency).
+
+
+Also, our prix fixe web service is in continous development and thus access methods should not be considered finalized.
+Furthermore, since the service is under development, calls should \textbf{NOT} be looped, as they'd likely cripple public servers (so please be kind)!
+
+
+\section{Installation and loading}
+
+The PrixFixe R package can be installed from source like any other R package.
+One such method (from within R) is:\\
+\begin{center}
+  \texttt{> install.packages("/the/path/to/PrixFixe\_0.1-3.tar.gz", repos = NULL)}
+\end{center}
+If any dependencies are missing, the user will be notified, and they can then be install as needed (see above).
+
+The package can then be loaded like so:
+<<>>=
+  library(PrixFixe, quietly = TRUE)
+@
+
+\section{Getting function details}
+
+Most of the functions described here have corresponding R help/man pages that describe the options and parameters in greater detail.
+Within this document, the default settings are used in almost every case to keep this introduction, well, introductory.
+
+To access help pages for functions listed in this vignette, use the following commands:
+\begin{center}
+  \texttt{help("getLDRegionsFromSNPs.WS")}\\
+  \texttt{help("getGeneRegionsTable")}\\
+  \texttt{help("getCandidateEdges.WS")}\\
+  \texttt{help("GPF\$PF\$new")}\\
+  \texttt{help("GPF\$GA\$run")}\\
+  \texttt{help("GPF\$GA\$scoreVertices")}
+\end{center}
+
+\section{Mapping SNPs to LD regions}
+
+To convert a collection of dbSNP IDs to candidate gene sets, a web service call may be used.
+Here, we'll use a list of example dbSNP IDs that are provided with the package (\texttt{example\_dbsnp\_ids}).
+This example list of SNPs is quite small and is not intended to reflect typical use cases where perhaps hundreds of loci are contributing to a trait, but is rather kept small for the sake of brevity and simplicity within this vignette.
+<<>>=
+  str(example_dbsnp_ids)
+  ld_regions_query_result <- getLDRegionsFromSNPs.WS(example_dbsnp_ids)
+@
+
+The web service returns information about any bad IDs or those which don't appear in either the current `Ensembl` or `NCBI` public resources.
+<<>>=
+  ## these look funny:
+  ld_regions_query_result$invalid_dbsnp_ids
+  ## these look all right, but don't appear in the dbSNP database:
+  ld_regions_query_result$unfound_dbsnp_ids
+  ## these are known SNPs, but don't appear in the HapMap database:
+  ld_regions_query_result$unmapped_dbsnps
+@
+
+The LD regions themselves are usually best viewed as a single table with the candidate genes.
+<<>>=
+  candidate_gene_table <- getGeneRegionsTable(ld_regions_query_result$ld_regions)
+  head(candidate_gene_table)
+  str(candidate_gene_table)
+@
+
+\section{Edges between genes}
+
+The prix fixe code can use any collection of edges between the candidate genes.
+All matching on genes should be done on unique identifiers, and here we use NCBI Gene IDs for that purpose.
+(If using yeast, for example, SGD IDs would be a natural choice.)
+
+Edges are provided to the prix fixe methods as a simple two-column \texttt{data.frame} with the gene IDs.
+To acquire the human edges used in the accompanying manuscript, a web service call is made (using NCBI Gene IDs):
+<<>>=
+  candidate_edges <- getCandidateEdges.WS(candidate_gene_table$id)
+  head(candidate_edges)
+  str(candidate_edges)
+@
+This web service call only retrieves those edges connecting candidate genes to other candidate genes.
+Working with this (very much) reduced set of edges is much faster than working with the full network.
+These edges will be further reduced to only those satisfying the prix fixe $n$-partite constraint (as described in the manuscript).
+
+\section{Creating a prix fixe instance}
+
+Once a set of candidate gene sets has been acquired, and edges between those candidate genes have been supplied, a prix fixe problem instance can be created.
+The candidate genes should be partitioned into their appropriate loci, and thus specified as an R \texttt{list} of \texttt{character} vectors:
+<<>>=
+  candidate_gene_sets <- tapply(candidate_gene_table$id, candidate_gene_table$region_name, I)
+  candidate_gene_sets
+  prix_fixe <- GPF$PF$new(candidate_gene_sets, candidate_edges, VERBOSE = TRUE)
+@
+As seen above, the function is stored in a list called \texttt{GPF}... this is just a convenience object that holds many utility functions.
+You will see it used again below when running the genetic algorithm and scoring genes.
+
+The prix fixe problem instance doesn't score genes itself, but rather just sets up the problem with the appropriate constraints.
+For instance, An $n$-partite graph is created (using the \texttt{igraph} R package):
+<<>>=
+  prix_fixe$G
+@
+PrixFixe objects aren't really all that useful themselves, but rather are to be handed-over to the dense prix fixe subgraph searchers, as described in the next section.
+
+Any gene identifiers and networks (for any species) can be used to create a prix fixe problem instance.
+The only requirement is that the gene identifiers are consistent between both the candidate gene sets and edge arguments.
+
+\section{Scoring genes}
+
+Once a prix fixe instance has been created, it can be passed to the genetic algorithm optimizer, which will attempt to find dense prix fixe subnetworks:
+<<>>=
+  GA_run_result <- GPF$GA$run(prix_fixe, VERBOSE = TRUE)
+@
+Upon termination of the algorithm, genes can now be scored:
+<<>>=
+  score_table <- GPF$GA$scoreVertices(GA_run_result, VERBOSE = TRUE)
+@
+Genes not having any connections in the $n$-partite graph are unscored, and so we can merge the scores back with the original candidate gene table and give a score of zero to those disconnected genes:
+<<>>=
+  candidate_gene_table$score <-
+  score_table$scaled_score[match(candidate_gene_table$id, score_table$vertex_name)]
+  candidate_gene_table$score[is.na(candidate_gene_table$score)] <- 0
+@
+We can then sort this table by locus and/or score to see the top-scoring candidate genes within each locus:
+<<>>=
+  ## we use the plyr package to manipulate data frames
+  library(plyr)
+  candidate_gene_table <- plyr::arrange(candidate_gene_table, region_name, -score)
+  candidate_gene_table[c("id", "symbol", "region_name", "score")]
+
+	## reorder candidate gene table by score if needed
+	candidate_gene_table <- candidate_gene_table[order(candidate_gene_table$score, decreasing=TRUE),]
+@
+
+In the cases of relative small candidate gene table we can visualy represent it as a graph using the igraph package.
+For convenience we will first convert the gene ids into gene symbols.
+
+<<>>=
+	## Convert candidate_gene_table to a new table that uses gene symbols
+	rownames(candidate_gene_table) <- candidate_gene_table$id
+	candidate_edges_genes <- cbind(
+	    candidate_gene_table[paste('NCBI_Gene:',candidate_edges[,1],sep=''),'symbol']
+		 ,candidate_gene_table[paste('NCBI_Gene:',candidate_edges[,2],sep=''),'symbol'])
+
+	candidate_edges_genes
+
+	# create the graph from the above table that defines the edges of the graph
+	library('igraph')
+  g <- graph_from_edgelist(as.matrix(candidate_edges_genes), directed=FALSE)
+
+@
+
+Plot the graph from the Candidate genes
+<<label=fig1,fig=TRUE,echo=TRUE>>=
+  plot(g)
+@
+
+Add the PrixFixe score to the candidate genes graph and show the vertex size
+proportional to the score.
+<<label=fig2,fig=TRUE,echo=TRUE>>=
+	 	plot(g, vertex.size=candidate_gene_table$score[
+	 	    match(attr(V(g),'name'),candidate_gene_table$symbol )]*40)
+@
+
+
+
+\section{Next up in development}
+
+\begin{itemize}
+\item Additional plotting functions to visualize the results.
+\item Improved testing to handle bad-input cases and provide more meaningful error messages.
+\item Parallelization support for genetic algorithm execution and scoring.
+\end{itemize}
+
+
+\section{References}\label{refs}
+
+\begin{itemize}
+\item M Tasan, G Musso, T Hao, M Vidal, CA MacRae and FP Roth. Selecting causal genes from genome-wide association studies via functionally coherent subnetworks. Nature Methods 12(2):154-159 (2015)
+\end{itemize}
+
+\end{document}
