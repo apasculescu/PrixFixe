@@ -1,0 +1,15 @@
+Package: PrixFixe
+Version: 0.1-3
+License: Creative Commons
+Date: 2021-09-07
+Title: Data-free collection of prix fixe utilites to accompany the prix
+        fixe manuscript
+Description: Data-free collection of prix fixe utilites to accompany the prix fixe manuscript
+Author: Murat Tasan, updated by Adrian Pasculescu
+Maintainer: Adrian Pasculescu <a.pasculescu@gmail.com>
+Copyright: Frederick P. Roth and Murat Tasan
+Depends: R (>= 3.0.0), IRanges, igraph
+Imports: stringr, plyr, httr, jsonlite, IRanges, igraph
+Packaged: 2015-06-15 20:42:22 UTC; mtasan
+LazyData: true
+

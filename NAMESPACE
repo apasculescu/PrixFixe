@@ -1,0 +1,13 @@
+import(stringr, plyr, httr, jsonlite, IRanges, igraph)
+
+## from general_utils.R
+export(NA2, Inf2, NaN2, TODAY, "%ni%",  pairAndSort, linearRescale, rotateMatrix)
+
+## from web_service_calls.R
+export(getLDRegionsFromSNPs.WS, getCandidateEdges.WS, getGeneRegionsTable)
+
+## from PrixFixe.R, ID.R, UTIL.R, GA.R, via .onLoad(libname, package) in zzz.R
+export(GPF)
+
+## from data.R
+export(example_dbsnp_ids)
